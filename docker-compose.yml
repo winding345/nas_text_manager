@@ -1,0 +1,19 @@
+services:
+  app:
+    build: .
+    image: nas-text-manager:latest
+    container_name: nas-text-manager
+    restart: unless-stopped
+    ports:
+      - "8686:8000"
+    environment:
+      # 容器内的目录列表，和下面 volumes 的挂载点一一对应
+      BOOKS_DIRS: "/books/data1,/books/data2,/books/data3"
+      ALLOW_DELETE: "1"
+      DB_PATH: "/data/library.db"
+    volumes:
+      - ./data:/data
+      # 宿主机目录 -> 容器目录；要加更多目录，就复制一行并改 BOOKS_DIRS
+      - ${BOOKS_1}:/books/data1
+      - ${BOOKS_2}:/books/data2
+      - ${BOOKS_3}:/books/data3
