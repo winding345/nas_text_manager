@@ -75,7 +75,7 @@ class Store:
         return dict(row) if row else None
 
     def list_books(self, terms: Iterable[str] = (), limit: int = 200) -> List[Dict[str, Any]]:
-        sql = "SELECT id,name,ext,size,root,char_count FROM books"
+        sql = "SELECT id,name,ext,size,root,char_count,path FROM books"
         params: List[Any] = []
         terms = [t for t in terms if t]
         if terms:

@@ -55,6 +55,14 @@ def test_search_inside_book(client):
     assert r["hits"] and "曹操" in r["hits"][0]["text"]
 
 
+def test_search_all_books(client):
+    r = client.get("/api/search", params={"q": "曹操"}).json()
+    assert r["results"], "应命中"
+    r2 = client.get("/api/search", params={"q": "曹操 刘备"}).json()
+    assert len(r2["results"]) == 1
+    assert r2["results"][0]["book"]["name"] == "三国演义"
+
+
 def test_delete_removes_file(client, tmp_path):
     book = client.get("/api/books", params={"q": "红楼"}).json()["books"][0]
     path = tmp_path / "books" / "红楼梦.txt"
