@@ -73,16 +73,43 @@ function blockIndexAt(offset) {
 }
 
 // ---------- 设置 ----------
-const THEMES = { light: "#f5f2ea", sepia: "#f2e7d3", night: "#121212", green: "#dfeadb" };
+const THEMES = { light: "#FAF8F3", sepia: "#F4ECD8", night: "#1A1A1C", green: "#DDE8D8" };
+
+// 候选字体：用"宽度探测"判断客户端是否装了（浏览器不提供系统字体列表）
+const FONT_CANDIDATES = [
+  { label: "系统默认", family: null },
+  { label: "微软雅黑", family: "Microsoft YaHei" },
+  { label: "苹方", family: "PingFang SC" },
+  { label: "思源黑体", family: "Source Han Sans SC" },
+  { label: "Noto Sans CJK", family: "Noto Sans CJK SC" },
+  { label: "宋体", family: "SimSun" },
+  { label: "思源宋体", family: "Source Han Serif SC" },
+  { label: "Noto Serif CJK", family: "Noto Serif CJK SC" },
+  { label: "楷体", family: "KaiTi" },
+  { label: "仿宋", family: "FangSong" },
+  { label: "黑体", family: "SimHei" },
+  { label: "等线", family: "DengXian" },
+  { label: "霞鹜文楷", family: "LXGW WenKai" },
+  { label: "华文宋体", family: "STSong" },
+  { label: "华文楷体", family: "STKaiti" },
+];
+
+function fontAvailable(family) {
+  // 同宽度对照法：目标字体 vs 两种基准，任一不同即认为存在
+  const test = "汉字abc123测试";
+  const c = document.createElement("canvas").getContext("2d");
+  const measure = (f) => { c.font = '32px ' + f; return c.measureText(test).width; };
+  const baseMono = measure("monospace");
+  const baseSans = measure("sans-serif");
+  const target = measure('"' + family + '", monospace');
+  return Math.abs(target - baseMono) > 0.5 || Math.abs(measure('"' + family + '", sans-serif') - baseSans) > 0.5;
+}
 
 function applySettings(s) {
   document.documentElement.style.setProperty("--fs", s.fontSize + "px");
   document.documentElement.style.setProperty("--lh", s.lineHeight);
   document.body.dataset.theme = s.theme;
-  document.body.dataset.font = s.font || "sans";
-  document.querySelectorAll("#fonts button").forEach((b) => {
-    b.classList.toggle("on", (b.dataset.font || "sans") === (s.font || "sans"));
-  });
+  applyFont(s.font || "");
   document.body.style.background = THEMES[s.theme] || THEMES.light;
 }
 
@@ -265,10 +292,6 @@ $("#btn-close-panel").onclick = () => { $("#panel").hidden = true; };
 $("#font-size").oninput = (e) => saveSettings({ fontSize: +e.target.value });
 $("#line-height").oninput = (e) => saveSettings({ lineHeight: +e.target.value });
 
-document.querySelectorAll("#fonts button").forEach((b) => {
-  b.onclick = () => saveSettings({ font: b.dataset.font });
-});
-
 for (const [name, color] of Object.entries(THEMES)) {
   const b = document.createElement("button");
   b.style.background = color;
@@ -321,6 +344,39 @@ $("#reader-text").addEventListener("scroll", () => {
   scrollTimer = setTimeout(() => { scrollTimer = null; updateProgressLabel(); }, 400);
 });
 
+function applyFont(family) {
+  const root = document.documentElement;
+  if (!family) {
+    root.style.removeProperty("--font");
+  } else {
+    root.style.setProperty("--font", '"' + family + '", -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif');
+  }
+  document.querySelectorAll("#fonts button").forEach((b) => {
+    b.classList.toggle("on", (b.dataset.family || "") === (family || ""));
+  });
+}
+
+function buildFontList() {
+  const box = $("#fonts");
+  if (!box) return;
+  const found = FONT_CANDIDATES.filter((f) => !f.family || fontAvailable(f.family));
+  box.innerHTML = "";
+  for (const f of found) {
+    const b = document.createElement("button");
+    b.textContent = f.label;
+    b.dataset.family = f.family || "";
+    b.style.fontFamily = f.family ? '"' + f.family + '"' : "inherit";
+    if (!f.family) b.classList.add("on");
+    b.onclick = () => saveSettings({ font: f.family || "" });
+    box.appendChild(b);
+  }
+  const hint = document.createElement("div");
+  hint.className = "hint";
+  hint.textContent = "共探测到 " + found.filter((f) => f.family).length + " 种，其余本机没装";
+  box.appendChild(hint);
+}
+
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+buildFontList();
 loadSettings();
 loadBooks();
