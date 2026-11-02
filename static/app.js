@@ -79,12 +79,16 @@ function applySettings(s) {
   document.documentElement.style.setProperty("--fs", s.fontSize + "px");
   document.documentElement.style.setProperty("--lh", s.lineHeight);
   document.body.dataset.theme = s.theme;
+  document.body.dataset.font = s.font || "sans";
+  document.querySelectorAll("#fonts button").forEach((b) => {
+    b.classList.toggle("on", (b.dataset.font || "sans") === (s.font || "sans"));
+  });
   document.body.style.background = THEMES[s.theme] || THEMES.light;
 }
 
 function loadSettings() {
   const raw = localStorage.getItem("reader-settings");
-  const s = raw ? JSON.parse(raw) : { fontSize: 19, lineHeight: 1.75, theme: "light" };
+  const s = raw ? JSON.parse(raw) : { fontSize: 19, lineHeight: 1.8, theme: "light", font: "sans" };
   $("#font-size").value = s.fontSize;
   $("#line-height").value = s.lineHeight;
   applySettings(s);
@@ -260,6 +264,10 @@ document.addEventListener("click", (e) => {
 $("#btn-close-panel").onclick = () => { $("#panel").hidden = true; };
 $("#font-size").oninput = (e) => saveSettings({ fontSize: +e.target.value });
 $("#line-height").oninput = (e) => saveSettings({ lineHeight: +e.target.value });
+
+document.querySelectorAll("#fonts button").forEach((b) => {
+  b.onclick = () => saveSettings({ font: b.dataset.font });
+});
 
 for (const [name, color] of Object.entries(THEMES)) {
   const b = document.createElement("button");

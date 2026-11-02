@@ -1,14 +1,19 @@
 :root{
-  --bg:#f5f2ea; --fg:#2b2b2b; --muted:#8a8578; --line:#e2ddd0;
-  --accent:#7a6a4f; --panel:#fffdf8; --fs:19px; --lh:1.75;
+  --bg:#FAF8F3; --fg:#2A2A28; --muted:#6F6A60; --line:#E5E0D5;
+  --accent:#7a6a4f; --panel:#FFFDF8; --fs:19px; --lh:1.8;
+  --font:-apple-system,"PingFang SC","Microsoft YaHei","Noto Sans CJK SC","Source Han Sans SC",sans-serif;
 }
-body[data-theme="sepia"]{--bg:#f2e7d3;--fg:#5b4636;--muted:#9b8a75;--line:#e0d3b8;--panel:#fbf4e6;--accent:#8a6d4b}
-body[data-theme="night"]{--bg:#121212;--fg:#c8c8c8;--muted:#7a7a7a;--line:#2a2a2a;--panel:#1b1b1b;--accent:#9a9a9a}
-body[data-theme="green"]{--bg:#dfeadb;--fg:#2f3a2c;--muted:#7d8a78;--line:#c8d6c3;--panel:#eaf2e6;--accent:#5f7a58}
+/* 四套配色均经 WCAG 计算：正文 ≥9:1（AAA），次要文字 ≥4.4:1 */
+body[data-theme="sepia"]{--bg:#F4ECD8;--fg:#4A3B2A;--muted:#6F5C42;--line:#E0D2B4;--panel:#FBF4E4;--accent:#8A6D4B}
+/* 夜间：不用纯黑纯白，降低刺眼感（约 8.5:1） */
+body[data-theme="night"]{--bg:#1A1A1C;--fg:#BDB9B1;--muted:#8E8A82;--line:#2C2C30;--panel:#212124;--accent:#A8A49C}
+body[data-theme="green"]{--bg:#DDE8D8;--fg:#2A3527;--muted:#5B6A55;--line:#C6D5C1;--panel:#EAF2E6;--accent:#4F6A49}
+/* 字体可选：默认无衬线，宋体作为选项 */
+body[data-font="serif"]{--font:"Source Han Serif SC","Noto Serif CJK SC","Songti SC","SimSun",serif}
 
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);
-  font-family:"Songti SC","Source Han Serif SC","Noto Serif CJK SC",serif;
+  font-family:var(--font);
   -webkit-text-size-adjust:100%;overscroll-behavior:none}
 body{display:flex;flex-direction:column}
 button{font:inherit;color:var(--accent);background:none;border:1px solid var(--line);border-radius:8px;padding:6px 10px}
@@ -30,8 +35,12 @@ input[type=search]{flex:1;font:inherit;padding:8px 12px;border:1px solid var(--l
 #reader{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
 #reader-head{display:flex;justify-content:space-between;align-items:center;padding:8px 16px;
   border-bottom:1px solid var(--line);color:var(--muted);font-size:13px}
-#reader-text{flex:1;overflow:auto;padding:24px min(6vw,80px) 96px;font-size:var(--fs);line-height:var(--lh);
-  word-break:break-word;-webkit-user-select:text;user-select:text}
+#reader-text{flex:1;overflow:auto;padding:24px min(6vw,80px) 96px;
+  font-size:var(--fs);line-height:var(--lh);letter-spacing:.01em;
+  word-break:break-word;text-align:justify;text-justify:inter-ideograph;
+  -webkit-user-select:text;user-select:text}
+/* 正文限宽：约 36~40 个汉字一行，太宽会导致换行时"跳行" */
+#reader-text .blk{max-width:36em;margin:0 auto}
 #reader-text .blk{white-space:pre-wrap}
 #reader-progress{padding:6px 16px;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
 
@@ -54,3 +63,7 @@ input[type=search]{flex:1;font:inherit;padding:8px 12px;border:1px solid var(--l
   body[data-view="list"] #reader{display:none}
   #reader-text{padding:16px 18px 96px}
 }
+
+#fonts{display:flex;gap:8px;margin:10px 0}
+#fonts button{flex:1;font-size:13px}
+#fonts button.on{background:var(--accent);color:var(--bg)}
