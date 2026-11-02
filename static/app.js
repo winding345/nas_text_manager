@@ -171,7 +171,17 @@ $("#btn-back").onclick = async () => {
   clearInterval(state.timer);
   loadBooks();
 };
-$("#btn-settings").onclick = () => { $("#panel").hidden = !$("#panel").hidden; };
+$("#btn-settings").onclick = (e) => {
+  e.stopPropagation();
+  $("#panel").hidden = !$("#panel").hidden;
+};
+// 点面板外部关闭，避免挡住其它按钮
+document.addEventListener("click", (e) => {
+  const panel = $("#panel");
+  if (panel.hidden) return;
+  if (panel.contains(e.target) || e.target.closest("#btn-settings")) return;
+  panel.hidden = true;
+});
 $("#btn-close-panel").onclick = () => { $("#panel").hidden = true; };
 $("#font-size").oninput = (e) => saveSettings({ fontSize: +e.target.value });
 $("#line-height").oninput = (e) => saveSettings({ lineHeight: +e.target.value });

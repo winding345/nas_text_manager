@@ -45,6 +45,8 @@ input[type=search]{flex:1;font:inherit;padding:8px 12px;border:1px solid var(--l
   color:#fff;padding:8px 16px;border-radius:20px;font-size:13px;z-index:30}
 
 @media (max-width:760px){
+  #panel{left:12px;right:12px;top:auto;width:auto;
+    bottom:calc(12px + env(safe-area-inset-bottom))}
   #sidebar{width:100%}
   #layout[data-view="reader"] #sidebar{display:none}
   #layout[data-view="list"] #reader{display:none}
