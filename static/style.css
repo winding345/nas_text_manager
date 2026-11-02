@@ -49,7 +49,8 @@ input[type=search]{flex:1;font:inherit;padding:8px 12px;border:1px solid var(--l
   #panel{left:12px;right:12px;top:auto;width:auto;
     bottom:calc(12px + env(safe-area-inset-bottom))}
   #sidebar{width:100%}
-  #layout[data-view="reader"] #sidebar{display:none}
-  #layout[data-view="list"] #reader{display:none}
+  body[data-view="reader"] #sidebar{display:none}
+  body[data-view="reader"] #topbar #search{display:none}
+  body[data-view="list"] #reader{display:none}
   #reader-text{padding:16px 18px 96px}
 }
