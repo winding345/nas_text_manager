@@ -1,5 +1,7 @@
 const $ = (s) => document.querySelector(s);
-const state = { books: [], current: null, textNode: null, savedOffset: 0, dirty: false, timer: null };
+const state = { books: [], current: null, savedOffset: 0, dirty: false, timer: null,
+                blocks: [], prefix: [0], rendered: 0 };
+const BLOCK_CHARS = 2000;   // 每块约 2000 字，避免单个巨型文本节点拖垮排版
 
 async function api(path, opts = {}) {
   const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
@@ -17,6 +19,57 @@ function toast(msg) {
   el.hidden = false;
   clearTimeout(el._t);
   el._t = setTimeout(() => { el.hidden = true; }, 1800);
+}
+
+function splitIntoBlocks(text) {
+  const blocks = [];
+  let i = 0;
+  while (i < text.length) {
+    let end = Math.min(i + BLOCK_CHARS, text.length);
+    if (end < text.length) {
+      const nl = text.lastIndexOf("\n", end);
+      if (nl > i + BLOCK_CHARS / 2) end = nl + 1;   // 尽量在换行处切
+    }
+    blocks.push({ start: i, text: text.slice(i, end) });
+    i = end;
+  }
+  return blocks;
+}
+
+function appendBlocks(until) {
+  const box = $("#reader-text");
+  if (until <= state.rendered) return;
+  const frag = document.createDocumentFragment();
+  for (let i = state.rendered; i < until; i++) {
+    const b = state.blocks[i];
+    const d = document.createElement("div");
+    d.className = "blk";
+    d.textContent = b.text;
+    b.el = d;
+    frag.appendChild(d);
+  }
+  box.appendChild(frag);
+  state.rendered = until;
+}
+
+function scheduleRest() {
+  if (state.rendered >= state.blocks.length) return;
+  const tick = () => {
+    if (state.rendered >= state.blocks.length) return;
+    appendBlocks(Math.min(state.blocks.length, state.rendered + 150));
+    if (state.rendered < state.blocks.length) setTimeout(tick, 16);
+  };
+  setTimeout(tick, 16);
+}
+
+function blockIndexAt(offset) {
+  // prefix[i] <= offset < prefix[i+1]
+  let lo = 0, hi = state.blocks.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (state.prefix[mid] <= offset) lo = mid; else hi = mid - 1;
+  }
+  return lo;
 }
 
 // ---------- 设置 ----------
@@ -92,9 +145,15 @@ async function openBook(book) {
 
   $("#book-title").textContent = detail.name;
   const box = $("#reader-text");
-  box.innerHTML = "";
-  state.textNode = document.createTextNode(data.text);
-  box.appendChild(state.textNode);
+  state.blocks = splitIntoBlocks(data.text);
+  state.prefix = [0];
+  for (const b of state.blocks) state.prefix.push(state.prefix[state.prefix.length - 1] + b.text.length);
+
+  box.replaceChildren();
+  state.rendered = 0;
+  const targetIdx = blockIndexAt(Math.min(state.savedOffset, state.prefix[state.prefix.length - 1]));
+  appendBlocks(Math.min(state.blocks.length, Math.max(40, targetIdx + 20)));
+  scheduleRest();
   document.body.dataset.view = "reader";
   $("#btn-back").hidden = false;
   scrollToOffset(state.savedOffset);
@@ -104,11 +163,15 @@ async function openBook(book) {
 
 function scrollToOffset(offset) {
   const box = $("#reader-text");
-  const node = state.textNode;
-  if (!node) return;
-  const n = Math.max(0, Math.min(offset, node.length));
+  if (!state.blocks.length) return;
+  const n = Math.max(0, Math.min(offset, state.prefix[state.prefix.length - 1]));
+  const bi = blockIndexAt(n);
+  if (bi >= state.rendered) appendBlocks(Math.min(state.blocks.length, bi + 20));
+  const blk = state.blocks[bi];
+  if (!blk || !blk.el) return;
+  const local = Math.max(0, Math.min(n - blk.start, blk.text.length));
   const range = document.createRange();
-  range.setStart(node, n);
+  range.setStart(blk.el.firstChild, local);
   range.collapse(true);
   const rect = range.getBoundingClientRect();
   box.scrollTop += rect.top - box.getBoundingClientRect().top - 8;
@@ -116,30 +179,42 @@ function scrollToOffset(offset) {
 
 function currentOffset() {
   const box = $("#reader-text");
-  const node = state.textNode;
-  if (!node) return 0;
+  if (!state.blocks.length) return 0;
   const rect = box.getBoundingClientRect();
-  const x = rect.left + 12;
-  const y = rect.top + 12;
-  let range = null;
-  if (document.caretRangeFromPoint) range = document.caretRangeFromPoint(x, y);
-  else if (document.caretPositionFromPoint) {
-    const pos = document.caretPositionFromPoint(x, y);
-    if (pos) { range = document.createRange(); range.setStart(pos.offsetNode, pos.offset); }
+  const targetY = rect.top + 8;
+
+  // 先二分定位"当前视口顶部属于哪一块"
+  let lo = 0, hi = Math.max(0, state.rendered - 1), bi = 0;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const r = state.blocks[mid].el.getBoundingClientRect();
+    if (r.top <= targetY) { bi = mid; lo = mid + 1; } else hi = mid - 1;
   }
-  if (!range || range.startContainer !== node) return state.savedOffset;
-  return range.startOffset;
+
+  const blk = state.blocks[bi];
+  const node = blk.el.firstChild;
+  if (!node) return state.prefix[bi];
+  let a = 0, b = node.length;
+  const range = document.createRange();
+  while (a < b) {
+    const mid = (a + b) >> 1;
+    range.setStart(node, mid);
+    range.setEnd(node, Math.min(mid + 1, node.length));
+    const r = range.getBoundingClientRect();
+    if (r.bottom < targetY) a = mid + 1; else b = mid;
+  }
+  return state.prefix[bi] + a;
 }
 
 function updateProgressLabel() {
-  const total = state.textNode ? state.textNode.length : 0;
+  const total = state.prefix.length ? state.prefix[state.prefix.length - 1] : 0;
   const cur = currentOffset();
   const pct = total ? ((cur / total) * 100).toFixed(1) : "0";
   $("#progress-label").textContent = `${pct}% · ${cur} / ${total} 字`;
 }
 
 async function saveProgress(force = false) {
-  if (!state.current || !state.textNode) return;
+  if (!state.current || !state.blocks.length) return;
   const offset = currentOffset();
   if (!force && Math.abs(offset - state.savedOffset) < 50) return;
   state.savedOffset = offset;
@@ -201,7 +276,11 @@ $("#btn-search-book").onclick = async () => {
   const r = await api(`/api/books/${state.current.id}/search?q=${encodeURIComponent(q)}`);
   if (!r.hits.length) { toast("没找到"); return; }
   const term = q.split(/\s+/)[0];
-  const idx = state.textNode.textContent.indexOf(term);
+  let idx = -1;
+  for (const blk of state.blocks) {
+    const local = blk.text.indexOf(term);
+    if (local >= 0) { idx = blk.start + local; break; }
+  }
   if (idx >= 0) scrollToOffset(idx);
   toast(`命中 ${r.hits.length} 行（第 ${r.hits[0].line_no} 行起）`);
 };
@@ -222,7 +301,17 @@ $("#btn-search-content").onclick = async () => {
 // 关闭/切后台时保存
 document.addEventListener("visibilitychange", () => { if (document.hidden) saveProgress(true); });
 window.addEventListener("pagehide", () => { saveProgress(true); });
-$("#reader-text").addEventListener("scroll", () => { updateProgressLabel(); });
+let scrollTimer = null;
+$("#reader-text").addEventListener("scroll", () => {
+  if (state.rendered < state.blocks.length) {
+    const box = document.querySelector("#reader-text");
+    if (box.scrollHeight - box.scrollTop - box.clientHeight < 1200) {
+      appendBlocks(Math.min(state.blocks.length, state.rendered + 200));
+    }
+  }
+  if (scrollTimer) return;
+  scrollTimer = setTimeout(() => { scrollTimer = null; updateProgressLabel(); }, 400);
+});
 
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 loadSettings();

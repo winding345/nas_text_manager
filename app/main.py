@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 from typing import List, Optional
 
+from concurrent.futures import ThreadPoolExecutor
 from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -100,23 +102,43 @@ def search_in_book(book_id: int, q: str = "", limit: int = 0) -> dict:
     return {"book_id": book_id, "query": q, "hits": hits}
 
 
+_search_cache: dict = {}
+
+
 @app.get("/api/search")
 def search_all(q: str = "", limit: int = 200) -> dict:
-    """在已索引的书里搜内容；只搜 txt，按命中数限流。"""
+    """全库内容搜索：并发跑 ripgrep，带 60 秒缓存。"""
     terms = _split_terms(q)
     if not terms:
         return {"query": q, "results": []}
-    books = store.list_books((), limit=limit)
+
+    key = (q.strip(), limit)
+    cached = _search_cache.get(key)
+    if cached and time.time() - cached[0] < 60:
+        return cached[1]
+
+    # 内容搜索要覆盖全部书，不能只扫前 limit 本
+    books = [b for b in store.list_books((), limit=100000) if b["ext"] == "txt"]
     results = []
-    for book in books:
-        if book["ext"] != "txt":
-            continue
-        hits = indexer.search_book(book["path"], terms, settings, max_hits=5)
-        if hits:
-            results.append({"book": book, "hits": hits})
-        if len(results) >= 30:
-            break
-    return {"query": q, "results": results}
+    # 并发搜索，命中上限 30 本；rg 是独立进程，线程池足够
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures = {pool.submit(indexer.search_book, b["path"], terms, settings, 5): b
+                   for b in books}
+        for fut in futures:
+            try:
+                hits = fut.result(timeout=25)
+            except Exception:  # noqa: BLE001 单本失败不影响整体
+                hits = []
+            if hits:
+                results.append({"book": futures[fut], "hits": hits})
+                if len(results) >= 30:
+                    break
+
+    payload = {"query": q, "results": results, "scanned": len(books)}
+    _search_cache[key] = (time.time(), payload)
+    if len(_search_cache) > 50:
+        _search_cache.clear()
+    return payload
 
 
 @app.get("/api/settings")
