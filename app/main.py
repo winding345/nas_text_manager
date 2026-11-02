@@ -56,11 +56,12 @@ def get_text(book_id: int, offset: int = 0, limit: int = 0) -> dict:
         raise HTTPException(status_code=404, detail="书籍不存在")
     if book["ext"] != "txt":
         raise HTTPException(status_code=400, detail="只有 txt 支持在线阅读")
-    text, total = indexer.read_text(book["path"], limit=limit)
+    text, total = indexer.read_text(book["path"])   # 全量读入，total 才是真实字数
     if not book["char_count"]:
         store.set_char_count(book_id, total)
-    offset = max(0, min(offset, len(text)))
-    return {"text": text[offset:], "offset": offset, "total": len(text)}
+    offset = max(0, min(offset, total))
+    chunk = text[offset:] if not limit else text[offset:offset + limit]
+    return {"text": chunk, "offset": offset, "total": total}
 
 
 @app.get("/api/books/{book_id}/progress")
