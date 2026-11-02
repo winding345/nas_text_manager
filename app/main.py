@@ -23,6 +23,16 @@ STATIC_DIR = BASE_DIR / "static"
 app = FastAPI(title="nas_text_manager", docs_url=None, redoc_url=None)
 
 
+@app.middleware("http")
+async def no_cache_static(request, call_next):
+    """静态文件禁缓存：改完前端刷新即生效，避免旧 JS 卡在浏览器里。"""
+    resp = await call_next(request)
+    path = request.url.path
+    if path == "/" or path.endswith((".js", ".css", ".html", ".json")):
+        resp.headers["Cache-Control"] = "no-cache, must-revalidate"
+    return resp
+
+
 def _split_terms(value: str) -> List[str]:
     return [t for t in value.replace("　", " ").split() if t]
 
