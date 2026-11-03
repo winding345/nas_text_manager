@@ -62,43 +62,9 @@ function scheduleRest() {
   setTimeout(tick, 16);
 }
 
-function offsetOfLine(lineNo) {
-  // 统计到第 lineNo 行（1 起）的字符偏移
-  let seen = 1, offset = 0;
-  for (const blk of state.blocks) {
-    const lines = blk.text.split("\n");
-    for (let i = 0; i < lines.length; i++) {
-      if (seen === lineNo) return offset;
-      offset += lines[i].length + 1;   // +1 是换行符
-      seen += 1;
-    }
-  }
-  return 0;
-}
 
-function blockTextNear(offset, span = 200) {
-  return blockTextSlice(offset, span);
-}
 
-function blockTextSlice(offset, span) {
-  let out = "";
-  for (const blk of state.blocks) {
-    const end = blk.start + blk.text.length;
-    if (end <= offset) continue;
-    const from = Math.max(0, offset - blk.start);
-    out += blk.text.slice(from, from + span);
-    if (out.length >= span) break;
-  }
-  return out;
-}
 
-function findTermOffset(term) {
-  for (const blk of state.blocks) {
-    const local = blk.text.indexOf(term);
-    if (local >= 0) return blk.start + local;
-  }
-  return -1;
-}
 
 function blockIndexAt(offset) {
   // prefix[i] <= offset < prefix[i+1]
@@ -204,7 +170,7 @@ function renderList() {
 }
 
 // ---------- 阅读 ----------
-async function openBook(book, jump) {
+async function openBook(book) {
   if (book.ext !== "txt") { toast("非 txt，请用 Kindle 推送"); return; }
   const detail = await api(`/api/books/${book.id}`);
   const data = await api(`/api/books/${book.id}/text`);
@@ -225,19 +191,7 @@ async function openBook(book, jump) {
   scheduleRest();
   document.body.dataset.view = "reader";
   $("#btn-back").hidden = false;
-  let target = state.savedOffset;
-  if (jump && jump.line) {
-    target = offsetOfLine(jump.line);
-    // 行号定位失败（换行统计差异）时退回按词找
-    if (jump.term && !blockTextNear(target).includes(jump.term)) {
-      const idx = findTermOffset(jump.term);
-      if (idx >= 0) target = idx;
-    }
-  } else if (jump && jump.term) {
-    const idx = findTermOffset(jump.term);
-    if (idx >= 0) target = idx;
-  }
-  scrollToOffset(target);
+  scrollToOffset(state.savedOffset);
   startAutosave();
   updateProgressLabel();
 }
@@ -464,7 +418,7 @@ function renderHit(book, hits, terms) {
   li.onclick = () => {
     document.body.dataset.view = "list";
     $("#searchpage").hidden = true;
-    openBook(book, { line: first.line_no, term: terms[0] });
+    openBook(book);   // 不跳转：避免覆盖原有阅读进度
   };
   return li;
 }
