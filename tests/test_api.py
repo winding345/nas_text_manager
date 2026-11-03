@@ -122,3 +122,26 @@ def test_search_cache_invalidated_after_delete(client):
     again = client.get("/api/search", params={"q": "曹操"}).json()
     names = [r["book"]["name"] for r in again["results"]]
     assert book["name"] not in names, "已删的书不应再出现在搜索结果里"
+
+
+def test_groups_and_group_filter(client):
+    """分组：按一级子目录切分；默认全局返回全部。"""
+    groups = client.get("/api/groups").json()
+    assert groups["total"] == 3
+    names = [g["name"] for g in groups["groups"]]
+    assert names, "至少有一个分组"
+    first = groups["groups"][0]["name"]
+    scoped = client.get("/api/books", params={"group": first}).json()
+    assert scoped["total"] == groups["groups"][0]["count"]
+    assert all(b["folder"] == first for b in scoped["books"])
+
+
+def test_search_stream_returns_hits(client):
+    """流式搜索：至少能收到 start / hit / done 三类事件。"""
+    with client.stream("GET", "/api/search", params={"q": "曹操"}) as r:
+        pass  # 旧接口保留，这里只确保它还能用
+    with client.stream("GET", "/api/search/stream", params={"q": "曹操"}) as resp:
+        body = b"".join(resp.iter_bytes()).decode()
+    assert '"type": "start"' in body
+    assert '"type": "hit"' in body
+    assert '"type": "done"' in body

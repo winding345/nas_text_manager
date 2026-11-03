@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS books (
     size INTEGER NOT NULL DEFAULT 0,
     mtime REAL NOT NULL DEFAULT 0,
     root TEXT NOT NULL DEFAULT '',
+    folder TEXT NOT NULL DEFAULT '',
     char_count INTEGER NOT NULL DEFAULT 0,
     added_at REAL NOT NULL DEFAULT 0
 );
@@ -38,6 +39,11 @@ class Store:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         with self._cursor() as cur:
             cur.executescript(SCHEMA)
+            # 老库自动补列（无迁移框架，做最小兼容）
+            try:
+                cur.execute("SELECT folder FROM books LIMIT 1")
+            except sqlite3.OperationalError:
+                cur.execute("ALTER TABLE books ADD COLUMN folder TEXT NOT NULL DEFAULT ''")
 
     @contextmanager
     def _cursor(self):
@@ -51,7 +57,7 @@ class Store:
 
     # ---------- 书籍 ----------
     def upsert_book(self, path: str, name: str, ext: str, size: int,
-                    mtime: float, root: str) -> bool:
+                    mtime: float, root: str, folder: str = "") -> bool:
         """返回是否新增（用于统计）。"""
         with self._cursor() as cur:
             cur.execute("SELECT id, size, mtime FROM books WHERE path=?", (path,))
@@ -60,12 +66,12 @@ class Store:
                 if int(row["size"]) == size and abs(float(row["mtime"]) - mtime) < 1e-6:
                     return False
                 cur.execute(
-                    "UPDATE books SET name=?, size=?, mtime=?, root=?, char_count=0 WHERE id=?",
-                    (name, size, mtime, root, row["id"]))
+                    "UPDATE books SET name=?, size=?, mtime=?, root=?, folder=?, char_count=0 WHERE id=?",
+                    (name, size, mtime, root, folder, row["id"]))
                 return False
             cur.execute(
-                "INSERT INTO books(path,name,ext,size,mtime,root,added_at) VALUES (?,?,?,?,?,?,?)",
-                (path, name, ext, size, mtime, root, time.time()))
+                "INSERT INTO books(path,name,ext,size,mtime,root,folder,added_at) VALUES (?,?,?,?,?,?,?,?)",
+                (path, name, ext, size, mtime, root, folder, time.time()))
             return True
 
     def get_book(self, book_id: int) -> Optional[Dict[str, Any]]:
@@ -74,13 +80,20 @@ class Store:
             row = cur.fetchone()
         return dict(row) if row else None
 
-    def list_books(self, terms: Iterable[str] = (), limit: int = 200) -> List[Dict[str, Any]]:
-        sql = "SELECT id,name,ext,size,root,char_count,path FROM books"
+    def list_books(self, terms: Iterable[str] = (), limit: int = 200,
+                   folder: Optional[str] = None) -> List[Dict[str, Any]]:
+        sql = "SELECT id,name,ext,size,root,folder,char_count,path FROM books"
         params: List[Any] = []
         terms = [t for t in terms if t]
+        where = []
         if terms:
-            sql += " WHERE " + " AND ".join("name LIKE ?" for _ in terms)
+            where.append(" AND ".join("name LIKE ?" for _ in terms))
             params += ["%%%s%%" % t for t in terms]
+        if folder:
+            where.append("folder = ?")
+            params.append(folder)
+        if where:
+            sql += " WHERE " + " AND ".join(where)
         sql += " ORDER BY name LIMIT ?"
         params.append(limit)
         with self._cursor() as cur:
@@ -99,6 +112,11 @@ class Store:
     def set_char_count(self, book_id: int, count: int) -> None:
         with self._cursor() as cur:
             cur.execute("UPDATE books SET char_count=? WHERE id=?", (count, book_id))
+
+    def groups(self) -> List[Dict[str, Any]]:
+        with self._cursor() as cur:
+            cur.execute("SELECT folder, COUNT(*) AS n FROM books GROUP BY folder ORDER BY folder")
+            return [{"name": r["folder"], "count": int(r["n"])} for r in cur.fetchall()]
 
     def count_books(self) -> int:
         with self._cursor() as cur:

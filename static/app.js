@@ -1,6 +1,6 @@
 const $ = (s) => document.querySelector(s);
 const state = { books: [], current: null, savedOffset: 0, dirty: false, timer: null,
-                blocks: [], prefix: [0], rendered: 0 };
+                blocks: [], prefix: [0], rendered: 0, group: "", groups: [] };
 const BLOCK_CHARS = 2000;   // 每块约 2000 字，避免单个巨型文本节点拖垮排版
 
 async function api(path, opts = {}) {
@@ -102,9 +102,33 @@ function saveSettings(patch) {
 // ---------- 列表 ----------
 async function loadBooks() {
   const q = $("#search").value.trim();
-  const data = await api(`/api/books?q=${encodeURIComponent(q)}`);
+  const url = `/api/books?q=${encodeURIComponent(q)}&group=${encodeURIComponent(state.group)}`;
+  const data = await api(url);
   state.books = data.books;
   renderList();
+}
+
+async function loadGroups() {
+  const data = await api("/api/groups");
+  state.groups = data.groups;
+  renderGroups(data.total);
+}
+
+function renderGroups(total) {
+  const box = $("#groups");
+  box.innerHTML = "";
+  const all = document.createElement("button");
+  all.textContent = `全部 ${total}`;
+  all.className = state.group === "" ? "on" : "";
+  all.onclick = () => { state.group = ""; loadBooks(); loadGroups(); };
+  box.appendChild(all);
+  for (const g of state.groups) {
+    const b = document.createElement("button");
+    b.textContent = `${g.name || "未分组"} ${g.count}`;
+    b.className = state.group === g.name ? "on" : "";
+    b.onclick = () => { state.group = g.name; loadBooks(); loadGroups(); };
+    box.appendChild(b);
+  }
 }
 
 function renderList() {
@@ -142,7 +166,7 @@ function renderList() {
 }
 
 // ---------- 阅读 ----------
-async function openBook(book) {
+async function openBook(book, jumpTerm) {
   if (book.ext !== "txt") { toast("非 txt，请用 Kindle 推送"); return; }
   const detail = await api(`/api/books/${book.id}`);
   const data = await api(`/api/books/${book.id}/text`);
@@ -163,7 +187,16 @@ async function openBook(book) {
   scheduleRest();
   document.body.dataset.view = "reader";
   $("#btn-back").hidden = false;
-  scrollToOffset(state.savedOffset);
+  if (jumpTerm) {
+    let idx = -1;
+    for (const blk of state.blocks) {
+      const local = blk.text.indexOf(jumpTerm);
+      if (local >= 0) { idx = blk.start + local; break; }
+    }
+    scrollToOffset(idx >= 0 ? idx : state.savedOffset);
+  } else {
+    scrollToOffset(state.savedOffset);
+  }
   startAutosave();
   updateProgressLabel();
 }
@@ -244,6 +277,7 @@ $("#btn-scan").onclick = async () => {
   toast("扫描中…");
   const r = await api("/api/scan", { method: "POST" });
   toast(`共 ${r.total}，新增 ${r.added}`);
+  loadGroups();
   loadBooks();
 };
 $("#btn-back").onclick = async () => {
@@ -292,18 +326,98 @@ $("#btn-search-book").onclick = async () => {
   toast(`命中 ${r.hits.length} 行（第 ${r.hits[0].line_no} 行起）`);
 };
 
-$("#btn-search-content").onclick = async () => {
-  const q = prompt("全库搜内容（空格分隔，多个词需同时出现）");
+function openSearchPage() {
+  document.body.dataset.view = "search";
+  $("#searchpage").hidden = false;
+  $("#search-results").innerHTML = "";
+  $("#search-meta").textContent = state.group ? `范围：${state.group}` : "范围：全部书籍";
+  $("#content-q").value = $("#search").value.trim();
+  $("#content-q").focus();
+}
+
+function closeSearchPage() {
+  document.body.dataset.view = "list";
+  $("#searchpage").hidden = true;
+  clearInterval(state.timer);
+  loadBooks();
+}
+
+$("#btn-search-content").onclick = openSearchPage;
+$("#btn-search-back").onclick = closeSearchPage;
+$("#btn-do-search").onclick = runContentSearch;
+$("#content-q").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); runContentSearch(); }
+});
+
+async function runContentSearch() {
+  const q = $("#content-q").value.trim();
   if (!q) return;
-  toast("搜索中…");
+  const list = $("#search-results");
+  list.innerHTML = "";
+  $("#search-meta").textContent = "搜索中…";
+  const terms = q.split(/\s+/).filter(Boolean);
+
   try {
-    const r = await api(`/api/search?q=${encodeURIComponent(q)}`);
-    if (!r.results.length) { toast("没有匹配的书"); return; }
-    state.books = r.results.map((x) => x.book);
-    renderList();
-    toast(`命中 ${r.results.length} 本`);
-  } catch (e) { toast("搜索失败：" + e.message); }
-};
+    const url = `/api/search/stream?q=${encodeURIComponent(q)}&group=${encodeURIComponent(state.group)}`;
+    const res = await fetch(url);
+    if (!res.ok || !res.body) throw new Error("HTTP " + res.status);
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "", found = 0, scanned = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const parts = buf.split("\n\n");
+      buf = parts.pop();
+      for (const part of parts) {
+        const line = part.trim();
+        if (!line.startsWith("data:")) continue;
+        const obj = JSON.parse(line.slice(5).trim());
+        if (obj.type === "start") {
+          scanned = obj.total;
+          $("#search-meta").textContent = `正在搜索 ${scanned} 本…`;
+        } else if (obj.type === "hit") {
+          found += 1;
+          list.appendChild(renderHit(obj.book, obj.hits, terms));
+          $("#search-meta").textContent = `已找到 ${found} 本（共 ${scanned} 本）`;
+        } else if (obj.type === "done") {
+          $("#search-meta").textContent =
+            found ? `共 ${found} 本命中（扫描 ${obj.scanned} 本）` : `没有找到（扫描 ${obj.scanned} 本）`;
+        }
+      }
+    }
+  } catch (e) {
+    $("#search-meta").textContent = "搜索失败：" + e.message;
+  }
+}
+
+function renderHit(book, hits, terms) {
+  const li = document.createElement("li");
+  const title = document.createElement("div");
+  title.className = "title";
+  title.textContent = book.name + (book.folder ? `  ·  ${book.folder}` : "");
+  li.appendChild(title);
+  const first = hits[0];
+  let html = first.text;
+  for (const t of terms) {
+    try {
+      html = html.replace(new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"),
+                          (m) => `<mark>${m}</mark>`);
+    } catch (_) {}
+  }
+  const hit = document.createElement("div");
+  hit.className = "hit";
+  hit.innerHTML = `第 ${first.line_no} 行：${html}`;
+  li.appendChild(hit);
+  li.onclick = () => {
+    document.body.dataset.view = "list";
+    $("#searchpage").hidden = true;
+    openBook(book, terms[0]);
+  };
+  return li;
+}
 
 // 关闭/切后台时保存
 document.addEventListener("visibilitychange", () => { if (document.hidden) saveProgress(true); });
@@ -324,4 +438,5 @@ $("#reader-text").addEventListener("scroll", () => {
 
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 loadSettings();
+loadGroups();
 loadBooks();

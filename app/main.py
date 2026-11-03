@@ -1,15 +1,16 @@
 """FastAPI 入口：书库、阅读、进度、搜索、删除。"""
 from __future__ import annotations
 
+import json
 import os
 import time
 from pathlib import Path
 from typing import List, Optional
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import asynccontextmanager
 from fastapi import Body, FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import indexer
@@ -64,10 +65,17 @@ def rescan() -> dict:
     return result
 
 
+@app.get("/api/groups")
+def list_groups() -> dict:
+    groups = store.groups()
+    return {"groups": groups, "total": store.count_books()}
+
+
 @app.get("/api/books")
-def list_books(q: str = "", limit: int = Query(200, ge=1, le=1000)) -> dict:
-    books = store.list_books(_split_terms(q), limit=limit)
-    return {"books": books, "total": len(books)}
+def list_books(q: str = "", group: str = "",
+               limit: int = Query(200, ge=1, le=1000)) -> dict:
+    books = store.list_books(_split_terms(q), limit=limit, folder=group or None)
+    return {"books": books, "total": len(books), "group": group}
 
 
 @app.get("/api/books/{book_id}")
@@ -174,6 +182,44 @@ def search_all(q: str = "", limit: int = 200) -> dict:
     if len(_search_cache) > 50:
         _search_cache.clear()
     return payload
+
+
+@app.get("/api/search/stream")
+def search_stream(q: str = "", group: str = "") -> StreamingResponse:
+    """全库/分组内容搜索：每找到一本就推一条，前端可以边收边显示。"""
+    terms = _split_terms(q)
+    if not terms:
+        def empty():
+            yield b'data: {"type":"done","scanned":0,"found":0}\n\n'
+        return StreamingResponse(empty(), media_type="text/event-stream")
+
+    books = [b for b in store.list_books((), limit=100000, folder=group or None)
+             if b["ext"] == "txt"]
+
+    def gen():
+        yield ("data: " + json.dumps(
+            {"type": "start", "total": len(books)}, ensure_ascii=False) + "\n\n").encode()
+        found = 0
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            futures = {pool.submit(indexer.search_book, b["path"], terms, settings, 5): b
+                       for b in books}
+            for fut in as_completed(futures):
+                book = futures[fut]
+                try:
+                    hits = fut.result(timeout=30)
+                except Exception:  # noqa: BLE001
+                    hits = []
+                if not hits:
+                    continue
+                found += 1
+                yield ("data: " + json.dumps(
+                    {"type": "hit", "book": book, "hits": hits}, ensure_ascii=False) + "\n\n").encode()
+        yield ("data: " + json.dumps(
+            {"type": "done", "scanned": len(books), "found": found},
+            ensure_ascii=False) + "\n\n").encode()
+
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.get("/api/settings")
