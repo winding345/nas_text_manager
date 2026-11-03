@@ -453,6 +453,24 @@ $("#reader-text").addEventListener("scroll", () => {
 
 
 
+let installPrompt = null;
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  installPrompt = e;
+  const btn = $("#btn-install");
+  if (btn) btn.hidden = false;
+});
+$("#btn-install").onclick = async () => {
+  if (!installPrompt) {
+    toast("iOS：点 Safari 分享 → 添加到主屏幕");
+    return;
+  }
+  installPrompt.prompt();
+  await installPrompt.userChoice;
+  installPrompt = null;
+  $("#btn-install").hidden = true;
+};
+
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 loadSettings();
 loadBooks();

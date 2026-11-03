@@ -4,11 +4,16 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="书架">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="theme-color" content="#f5f2ea">
+<meta name="application-name" content="书架">
+<meta name="theme-color" content="#FAF8F3">
+<meta name="apple-touch-fullscreen" content="yes">
 <link rel="manifest" href="/manifest.json">
-<link rel="apple-touch-icon" href="/icon-192.png">
-<link rel="stylesheet" href="/style.css?v=5">
+<link rel="apple-touch-icon" sizes="180x180" href="/icon-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+<link rel="stylesheet" href="/style.css?v=6">
 <title>书架</title>
 </head>
 <body data-view="list">
@@ -24,6 +29,7 @@
       <span id="count"></span>
       <span>
         <button id="btn-search-content">搜内容</button>
+        <button id="btn-install" hidden>装到桌面</button>
         <button id="btn-scan">扫描</button>
       </span>
     </div>
@@ -61,6 +67,6 @@
 </section>
 
 <div id="toast" hidden></div>
-<script src="/app.js?v=5"></script>
+<script src="/app.js?v=6"></script>
 </body>
 </html>

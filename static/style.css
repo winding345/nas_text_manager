@@ -21,7 +21,8 @@ input[type=search]{flex:1;font:inherit;padding:8px 12px;border:1px solid var(--l
 #topbar{display:flex;gap:8px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--line);
   padding-top:calc(8px + env(safe-area-inset-top))}
 #layout{flex:1;display:flex;min-height:0}
-#sidebar{width:320px;border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+#sidebar{width:320px;border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;
+  padding-bottom:env(safe-area-inset-bottom)}
 #list-toolbar{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;color:var(--muted);font-size:13px}
 #book-list{list-style:none;margin:0;padding:0;overflow:auto;flex:1}
 #book-list li{padding:12px;border-bottom:1px solid var(--line);cursor:pointer;display:flex;gap:8px;align-items:center}
@@ -35,7 +36,7 @@ input[type=search]{flex:1;font:inherit;padding:8px 12px;border:1px solid var(--l
 #reader{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
 #reader-head{display:flex;justify-content:space-between;align-items:center;padding:8px 16px;
   border-bottom:1px solid var(--line);color:var(--muted);font-size:13px}
-#reader-text{flex:1;overflow:auto;padding:24px min(6vw,80px) 96px;
+#reader-text{flex:1;overflow:auto;padding:24px min(6vw,80px) calc(96px + env(safe-area-inset-bottom));
   font-size:var(--fs);line-height:var(--lh);letter-spacing:.01em;
   word-break:break-word;text-align:justify;text-justify:inter-ideograph;
   -webkit-user-select:text;user-select:text}

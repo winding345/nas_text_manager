@@ -1,12 +1,19 @@
 {
-  "name": "书架 · nas_text_manager",
+  "id": "/",
+  "name": "书架",
   "short_name": "书架",
+  "description": "NAS 上的 txt 阅读器：多级目录、进度记忆、正文搜索",
+  "lang": "zh-CN",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#f5f2ea",
-  "theme_color": "#f5f2ea",
+  "display_override": ["standalone", "minimal-ui", "browser"],
+  "orientation": "portrait",
+  "background_color": "#FAF8F3",
+  "theme_color": "#FAF8F3",
   "icons": [
-    {"src": "/icon-192.png", "sizes": "192x192", "type": "image/png"},
-    {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png"}
+    {"src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
   ]
 }
