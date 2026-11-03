@@ -164,3 +164,17 @@ def test_search_stream_returns_hits(client):
     assert '"type": "start"' in body
     assert '"type": "hit"' in body
     assert '"type": "done"' in body
+
+
+def test_filename_search_covers_subdirs(client):
+    """书名搜索要覆盖当前目录的所有子目录，而不是只看直属文件。"""
+    root = client.get("/api/browse", params={"q": "射雕"}).json()
+    assert [b["name"] for b in root["books"]] == ["射雕英雄传"]
+    assert root["books"][0]["folder"] == "books/武侠/金庸"
+    assert root["folders"] == [], "搜索时不再展示目录"
+
+    scoped = client.get("/api/browse", params={"path": "books/武侠", "q": "射雕"}).json()
+    assert [b["name"] for b in scoped["books"]] == ["射雕英雄传"]
+
+    miss = client.get("/api/browse", params={"path": "books", "q": "射雕"}).json()
+    assert [b["name"] for b in miss["books"]] == ["射雕英雄传"]

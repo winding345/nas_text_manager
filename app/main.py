@@ -89,11 +89,14 @@ def browse(path: str = "", q: str = "") -> dict:
     folders = [{"name": k, "path": (path + "/" + k) if path else k, "count": v}
                for k, v in sorted(counts.items())]
 
-    # 当前目录直属的书（不含子目录），可选按文件名过滤
+    # 书名搜索：覆盖当前目录 + 所有子目录；不搜索时只看当前目录直属的书
     terms = _split_terms(q)
-    direct = [b for b in scoped if b["folder"] == path]
     if terms:
-        direct = [b for b in direct if all(t.lower() in b["name"].lower() for t in terms)]
+        direct = [b for b in scoped
+                  if all(t.lower() in b["name"].lower() for t in terms)]
+        folders = []                        # 搜索时不再展示目录，直接给结果
+    else:
+        direct = [b for b in scoped if b["folder"] == path]
 
     crumbs = []
     acc = ""

@@ -156,6 +156,13 @@ function renderList() {
     const li = document.createElement("li");
     li.innerHTML = `<span class="name"></span><span class="ext">${b.ext}</span>`;
     li.querySelector(".name").textContent = b.name;
+    // 搜索/跨目录时标出这本书在哪个子目录
+    if ($("#search").value.trim() && b.folder && b.folder !== state.path) {
+      const tag = document.createElement("span");
+      tag.className = "folder-tag";
+      tag.textContent = b.folder;
+      li.querySelector(".name").appendChild(tag);
+    }
     if (b.ext !== "txt") {
       li.classList.add("disabled");
       li.title = "仅支持在线阅读 txt";
