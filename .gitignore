@@ -4,5 +4,7 @@ data/
 .env
 .pytest_cache/
 
-# 开发/交接知识（内部文档，不上传）
-docs/DEV-KNOWLEDGE.md
+# 内部交接/开发文档一律不入库
+docs/
+*.local.md
+NOTES*.md

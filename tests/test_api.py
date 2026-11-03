@@ -106,12 +106,8 @@ def test_delete_file_failure_leaves_orphan(client, monkeypatch, tmp_path):
     assert path.exists(), "文件应仍在磁盘上，证明删除不是原子的"
 
 
-def test_search_cache_still_hits_deleted_book(client):
-    """特征测试（§4.3）：`_search_cache` 不按 key 失效，删书后 60s 内仍返回该书。
-
-    这是**已知缺陷**的锁定测试：若将来改成删书/扫描时清缓存，本断言会失败，
-    请把它改成 `assert not again["results"]`，并同步更新 DEV-KNOWLEDGE §4.3/§9。
-    """
+def test_search_cache_invalidated_on_delete(client):
+    """删书后缓存必须失效，搜索结果不能继续返回它。"""
     first = client.get("/api/search", params={"q": "曹操"}).json()
     assert first["results"]
     book_id = first["results"][0]["book"]["id"]
@@ -120,8 +116,7 @@ def test_search_cache_still_hits_deleted_book(client):
     assert client.get(f"/api/books/{book_id}").status_code == 404
 
     again = client.get("/api/search", params={"q": "曹操"}).json()
-    assert [r["book"]["id"] for r in again["results"]] == [book_id], \
-        "缓存未失效：仍应命中已删除的书（已知缺陷）"
+    assert again["results"] == []
 
 
 def test_progress_negative_clamped_in_db_but_echoed(client):
@@ -133,3 +128,14 @@ def test_progress_negative_clamped_in_db_but_echoed(client):
     assert r.json()["char_offset"] == -5, "响应应回显原值（已知坑）"
     assert client.get(f"/api/books/{book['id']}/progress").json()["char_offset"] == 0, \
         "库里必须被压到 0"
+
+
+def test_search_cache_invalidated_after_delete(client):
+    """删书后立刻再搜，不能返回已删的书（旧缺陷）。"""
+    first = client.get("/api/search", params={"q": "曹操"}).json()
+    assert first["results"], "第一次应命中"
+    book = first["results"][0]["book"]
+    assert client.delete(f"/api/books/{book['id']}").status_code == 200
+    again = client.get("/api/search", params={"q": "曹操"}).json()
+    names = [r["book"]["name"] for r in again["results"]]
+    assert book["name"] not in names, "已删的书不应再出现在搜索结果里"

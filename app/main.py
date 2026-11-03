@@ -42,9 +42,14 @@ def health() -> dict:
     return {"ok": True, "books": store.count_books(), "roots": settings.roots}
 
 
+_search_cache: dict = {}
+
+
 @app.post("/api/scan")
 def rescan() -> dict:
-    return indexer.scan(store, settings)
+    result = indexer.scan(store, settings)
+    _search_cache.clear()          # 书库变了，旧的搜索结果立即作废
+    return result
 
 
 @app.get("/api/books")
@@ -95,6 +100,7 @@ def delete_book(book_id: int) -> dict:
     book = store.delete_book(book_id)
     if not book:
         raise HTTPException(status_code=404, detail="书籍不存在")
+    _search_cache.clear()          # 删书后不能让搜索结果继续返回它
     try:
         os.remove(book["path"])
     except OSError as exc:
@@ -110,9 +116,6 @@ def search_in_book(book_id: int, q: str = "", limit: int = 0) -> dict:
     terms = _split_terms(q)
     hits = indexer.search_book(book["path"], terms, settings, max_hits=limit)
     return {"book_id": book_id, "query": q, "hits": hits}
-
-
-_search_cache: dict = {}
 
 
 @app.get("/api/search")
