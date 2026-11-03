@@ -1,8 +1,10 @@
 """FastAPI 入口：书库、阅读、进度、搜索、删除。"""
 from __future__ import annotations
 
+from html import escape as html_escape
 import json
 import os
+import re
 import time
 from pathlib import Path
 from typing import List, Optional
@@ -10,7 +12,7 @@ from typing import List, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import asynccontextmanager
 from fastapi import Body, FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import indexer
@@ -275,6 +277,41 @@ def get_settings() -> dict:
 def put_settings(payload: dict = Body(...)) -> dict:
     store.put_settings({str(k): str(v) for k, v in (payload or {}).items()})
     return {"ok": True, "settings": store.get_settings()}
+
+
+@app.get("/read/{book_id}", response_class=HTMLResponse)
+def read_page(book_id: int) -> HTMLResponse:
+    """纯静态阅读页：语义化 <article><p>，供 Safari 阅读器识别。"""
+    book = store.get_book(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="书籍不存在")
+    if book["ext"] != "txt":
+        raise HTTPException(status_code=400, detail="只有 txt 支持在线阅读")
+
+    text, total = indexer.read_text(book["path"])
+    if not book["char_count"]:
+        store.set_char_count(book_id, total)
+
+    # 按空行切段落；空行不足时按单行切，保证有足够多的 <p>
+    raw_parts = re.split(r"\n\s*\n", text)
+    if len(raw_parts) < 20:
+        raw_parts = text.split("\n")
+    paras = []
+    for part in raw_parts:
+        part = part.replace("\r", "").strip()
+        if not part:
+            continue
+        paras.append("<p>%s</p>" % html_escape(part))
+    if not paras:
+        paras = ["<p>（空文件）</p>"]
+
+    return HTMLResponse(
+        "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+        "<title>%s</title></head><body><article><h1>%s</h1>%s"
+        "<p>—— 全文 %d 字</p></article></body></html>"
+        % (html_escape(book["name"]), html_escape(book["name"]), "".join(paras), total)
+    )
 
 
 app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")

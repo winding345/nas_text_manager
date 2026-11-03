@@ -220,6 +220,7 @@ async function openBook(book) {
   state.dirty = false;
 
   $("#book-title").textContent = detail.name;
+  $("#btn-safari").href = `/read/${detail.id}`;
   const box = $("#reader-text");
   state.blocks = splitIntoBlocks(data.text);
   state.prefix = [0];

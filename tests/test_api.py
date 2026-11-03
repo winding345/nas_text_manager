@@ -178,3 +178,19 @@ def test_filename_search_covers_subdirs(client):
 
     miss = client.get("/api/browse", params={"path": "books", "q": "射雕"}).json()
     assert [b["name"] for b in miss["books"]] == ["射雕英雄传"]
+
+
+def test_read_page_is_reader_friendly(client):
+    """Safari 阅读器需要语义化结构：article + 多个 <p>。"""
+    book = client.get("/api/books", params={"q": "三国"}).json()["books"][0]
+    r = client.get(f"/read/{book['id']}")
+    assert r.status_code == 200
+    html = r.text
+    assert "<article>" in html and "</article>" in html
+    assert html.count("<p>") >= 2
+    assert "曹操" in html
+
+
+def test_read_page_rejects_non_txt(client):
+    epub = client.get("/api/books", params={"q": "somebook"}).json()["books"][0]
+    assert client.get(f"/read/{epub['id']}").status_code == 400

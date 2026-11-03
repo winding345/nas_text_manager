@@ -113,3 +113,7 @@ input[type=search]{flex:1;font:inherit;padding:8px 12px;border:1px solid var(--l
 /* 搜索结果显示所属目录 */
 .folder-tag{display:inline-block;margin-left:8px;padding:1px 6px;border-radius:4px;
   font-size:11px;font-weight:400;color:var(--muted);border:1px solid var(--line)}
+
+/* 阅读页里的 Safari 阅读器入口 */
+#btn-safari{font:inherit;font-size:13px;color:var(--accent);text-decoration:none;
+  border:1px solid var(--line);border-radius:8px;padding:5px 10px}
