@@ -28,9 +28,9 @@ docker compose up -d --build
 `.env` 里每个变量对应 compose 的一个挂载点：
 
 ```env
-BOOKS_1=/vol3/1000/books/武侠
-BOOKS_2=/vol3/1000/books/科幻
-BOOKS_3=/vol3/1000/books/杂项
+BOOKS_1=/mnt/books/武侠
+BOOKS_2=/mnt/books/科幻
+BOOKS_3=/mnt/books/杂项
 ```
 
 要加更多目录：compose 里加一行 `- ${BOOKS_4}:/books/data4`，并把 `BOOKS_DIRS` 改成 `/books/data1,/books/data2,/books/data3,/books/data4`。
