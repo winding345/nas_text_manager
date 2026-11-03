@@ -59,3 +59,23 @@ uv venv .venv && uv pip install --python .venv/bin/python -r requirements.txt
 ./.venv/bin/python -m pytest -q
 ./.venv/bin/python -m uvicorn app.main:app --reload --port 8000
 ```
+
+## 更新代码
+
+代码目录（`./app`、`./static`）已挂载进容器，**改完代码只需重启**：
+
+```bash
+cd ~/workspace/nas_text_manager
+HTTPS_PROXY=http://127.0.0.1:7890 git pull     # NAS 上直连 GitHub 不稳时走代理
+docker compose restart
+docker compose logs --tail 20                  # 看到 [scan] 启动扫描：共 N 本 即正常
+```
+
+只有这些情况需要重建镜像（`--build`）：
+
+```text
+· 改了 Dockerfile 或 requirements.txt
+· 第一次部署
+```
+
+数据库 `./data/library.db` 和书库目录都在挂载卷里，更新不会丢。

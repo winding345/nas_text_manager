@@ -13,6 +13,9 @@ services:
       DB_PATH: "/data/library.db"
     volumes:
       - ./data:/data
+      # 代码挂载：改完 git pull + restart 即可生效，不用重建镜像
+      - ./app:/app/app:ro
+      - ./static:/app/static:ro
       # 宿主机目录 -> 容器目录；要加更多目录，就复制一行并改 BOOKS_DIRS
       - ${BOOKS_1}:/books/data1
       - ${BOOKS_2}:/books/data2
