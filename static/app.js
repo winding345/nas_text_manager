@@ -1,6 +1,7 @@
 const $ = (s) => document.querySelector(s);
 const state = { books: [], current: null, savedOffset: 0, dirty: false, timer: null,
-                blocks: [], prefix: [0], rendered: 0, path: "", folders: [], crumbs: [] };
+                blocks: [], prefix: [0], rendered: 0, path: "", folders: [], crumbs: [],
+                offset: 0, total: 0, loading: false };
 const BLOCK_CHARS = 2000;   // 每块约 2000 字，避免单个巨型文本节点拖垮排版
 
 async function api(path, opts = {}) {
@@ -104,16 +105,34 @@ function saveSettings(patch) {
 }
 
 // ---------- 列表 ----------
-async function loadBooks() {
+const PAGE = 200;
+
+async function loadBooks(append = false) {
+  if (state.loading) return;
+  state.loading = true;
   const q = $("#search").value.trim();
-  const url = `/api/browse?path=${encodeURIComponent(state.path)}&q=${encodeURIComponent(q)}`;
-  const data = await api(url);
-  state.books = data.books;
-  state.folders = data.folders;
-  state.crumbs = data.breadcrumb;
-  renderCrumbs();
-  renderFolders();
-  renderList();
+  const offset = append ? state.offset : 0;
+  const url = `/api/browse?path=${encodeURIComponent(state.path)}` +
+              `&q=${encodeURIComponent(q)}&limit=${PAGE}&offset=${offset}`;
+  try {
+    const data = await api(url);
+    state.books = append ? state.books.concat(data.books) : data.books;
+    state.offset = state.books.length;
+    state.total = data.total;
+    state.folders = data.folders;
+    state.crumbs = data.breadcrumb;
+    renderCrumbs();
+    renderFolders();
+    renderList();
+  } finally {
+    state.loading = false;
+  }
+}
+
+function maybeLoadMore() {
+  if (state.loading || state.books.length >= state.total) return;
+  const ul = $("#book-list");
+  if (ul.scrollHeight - ul.scrollTop - ul.clientHeight < 400) loadBooks(true);
 }
 
 function renderCrumbs() {
@@ -151,7 +170,9 @@ function renderFolders() {
 function renderList() {
   const ul = $("#book-list");
   ul.innerHTML = "";
-  $("#count").textContent = `${state.books.length} 本`;
+  $("#count").textContent = state.total > state.books.length
+    ? `${state.books.length} / ${state.total} 本`
+    : `${state.books.length} 本`;
   for (const b of state.books) {
     const li = document.createElement("li");
     li.innerHTML = `<span class="name"></span><span class="ext">${b.ext}</span>`;
@@ -232,6 +253,16 @@ function scrollToOffset(offset) {
   box.scrollTop += rect.top - box.getBoundingClientRect().top - 8;
 }
 
+function estimateOffset() {
+  // 便宜估算：块内字符数相近，滚动比例≈字数比例；不做任何布局读取
+  const box = $("#reader-text");
+  const total = state.prefix.length ? state.prefix[state.prefix.length - 1] : 0;
+  const span = box.scrollHeight - box.clientHeight;
+  if (!total || span <= 0) return 0;
+  const ratio = Math.min(1, Math.max(0, box.scrollTop / span));
+  return Math.round(ratio * total);
+}
+
 function currentOffset() {
   const box = $("#reader-text");
   if (!state.blocks.length) return 0;
@@ -288,6 +319,8 @@ function startAutosave() {
 
 // ---------- 交互 ----------
 $("#search").addEventListener("input", () => { clearTimeout(window._q); window._q = setTimeout(loadBooks, 150); });
+$("#book-list").addEventListener("scroll", maybeLoadMore);
+
 $("#btn-scan").onclick = async () => {
   toast("扫描中…");
   const r = await api("/api/scan", { method: "POST" });

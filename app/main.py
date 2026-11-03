@@ -66,37 +66,32 @@ def rescan() -> dict:
 
 
 @app.get("/api/browse")
-def browse(path: str = "", q: str = "") -> dict:
-    """目录式浏览：返回当前目录下的子目录、书籍，以及面包屑。"""
-    books = store.list_books((), limit=100000)          # 全量（只取元数据）
-    all_books = [b for b in books if b["ext"]]
-
-    # 当前目录（含子目录）的书
-    if path:
-        scoped = [b for b in all_books
-                  if b["folder"] == path or b["folder"].startswith(path + "/")]
-    else:
-        scoped = all_books
-
-    # 子目录：当前目录下所有书 folder 的第一段
-    counts: dict = {}
-    for b in scoped:
-        rest = b["folder"][len(path):].lstrip("/")
-        if not rest:
-            continue                                   # 直接躺在当前目录的书
-        child = rest.split("/")[0]
-        counts[child] = counts.get(child, 0) + 1
-    folders = [{"name": k, "path": (path + "/" + k) if path else k, "count": v}
-               for k, v in sorted(counts.items())]
-
-    # 书名搜索：覆盖当前目录 + 所有子目录；不搜索时只看当前目录直属的书
+def browse(path: str = "", q: str = "", limit: int = Query(200, ge=1, le=1000),
+           offset: int = Query(0, ge=0)) -> dict:
+    """目录式浏览：分页返回书籍，子目录由目录统计聚合得出（不扫全表）。"""
     terms = _split_terms(q)
+
     if terms:
-        direct = [b for b in scoped
-                  if all(t.lower() in b["name"].lower() for t in terms)]
-        folders = []                        # 搜索时不再展示目录，直接给结果
+        # 搜索：覆盖当前目录及所有子目录，一次性返回（命中通常不多）
+        books = []
+        for b in store.subtree_books(path):
+            if all(t.lower() in b["name"].lower() for t in terms):
+                books.append(b)
+        folders = []
+        total = len(books)
+        page = books
     else:
-        direct = [b for b in scoped if b["folder"] == path]
+        page, total = store.page_books(path, (), limit=limit, offset=offset)
+        # 子目录：从"目录→数量"统计里切出当前层的直接子目录
+        counts = {}
+        for row in store.folder_stats():
+            rest = row["folder"][len(path):].lstrip("/")
+            if not rest:
+                continue
+            child = rest.split("/")[0]
+            counts[child] = counts.get(child, 0) + row["count"]
+        folders = [{"name": k, "path": (path + "/" + k) if path else k, "count": v}
+                   for k, v in sorted(counts.items())]
 
     crumbs = []
     acc = ""
@@ -105,7 +100,7 @@ def browse(path: str = "", q: str = "") -> dict:
         crumbs.append({"name": seg, "path": acc})
 
     return {"path": path, "breadcrumb": crumbs, "folders": folders,
-            "books": direct, "total": len(direct), "scoped": len(scoped)}
+            "books": page, "total": total, "offset": offset, "limit": limit}
 
 
 @app.get("/api/groups")

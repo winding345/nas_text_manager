@@ -74,6 +74,71 @@ class Store:
                 (path, name, ext, size, mtime, root, folder, time.time()))
             return True
 
+    def bulk_sync(self, entries) -> Dict[str, int]:
+        """一次事务写入整批扫描结果：避免每本书一次 commit（2 万本会慢到几分钟）。"""
+        conn = sqlite3.connect(self.path, timeout=30)
+        conn.row_factory = sqlite3.Row
+        try:
+            existing = {r["path"]: (r["id"], int(r["size"]), float(r["mtime"]))
+                        for r in conn.execute("SELECT id,path,size,mtime FROM books")}
+            added = updated = 0
+            with conn:                      # 单事务：结束时才提交
+                for path, name, ext, size, mtime, root, folder in entries:
+                    old = existing.get(path)
+                    if old:
+                        if old[1] == size and abs(old[2] - mtime) < 1e-6:
+                            continue
+                        conn.execute(
+                            "UPDATE books SET name=?, size=?, mtime=?, root=?, folder=?, char_count=0 WHERE id=?",
+                            (name, size, mtime, root, folder, old[0]))
+                        updated += 1
+                    else:
+                        conn.execute(
+                            "INSERT INTO books(path,name,ext,size,mtime,root,folder,added_at) "
+                            "VALUES (?,?,?,?,?,?,?,?)",
+                            (path, name, ext, size, mtime, root, folder, time.time()))
+                        added += 1
+            return {"total": len(entries), "added": added, "updated": updated}
+        finally:
+            conn.close()
+
+    def folder_stats(self) -> List[Dict[str, Any]]:
+        """所有目录及其书籍数（目录数量少，全取也不贵）。"""
+        with self._cursor() as cur:
+            cur.execute("SELECT folder, COUNT(*) AS n FROM books GROUP BY folder")
+            return [{"folder": r["folder"], "count": int(r["n"])} for r in cur.fetchall()]
+
+    def page_books(self, folder: str, terms, limit: int = 200, offset: int = 0):
+        """某目录的直属书籍，分页返回 (rows, total)。"""
+        terms = [t for t in terms if t]
+        where = ["folder = ?"]
+        params: List[Any] = [folder]
+        for t in terms:
+            where.append("name LIKE ?")
+            params.append("%%%s%%" % t)
+        clause = " AND ".join(where)
+        with self._cursor() as cur:
+            cur.execute("SELECT COUNT(*) AS n FROM books WHERE " + clause, params)
+            total = int(cur.fetchone()["n"])
+            cur.execute(
+                "SELECT id,name,ext,size,root,folder,char_count,path FROM books WHERE "
+                + clause + " ORDER BY name LIMIT ? OFFSET ?",
+                params + [limit, offset])
+            return [dict(r) for r in cur.fetchall()], total
+
+    def subtree_books(self, path: str):
+        """某个目录（含子目录）下的全部书籍元数据，用于搜索。"""
+        with self._cursor() as cur:
+            if path:
+                cur.execute(
+                    "SELECT id,name,ext,size,root,folder,char_count,path FROM books "
+                    "WHERE folder = ? OR folder LIKE ? ORDER BY name",
+                    (path, path + "/%"))
+            else:
+                cur.execute(
+                    "SELECT id,name,ext,size,root,folder,char_count,path FROM books ORDER BY name")
+            return [dict(r) for r in cur.fetchall()]
+
     def get_book(self, book_id: int) -> Optional[Dict[str, Any]]:
         with self._cursor() as cur:
             cur.execute("SELECT * FROM books WHERE id=?", (book_id,))

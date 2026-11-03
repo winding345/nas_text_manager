@@ -15,13 +15,16 @@ ALL_EXTS = {".txt", ".pdf", ".epub", ".mobi", ".azw3", ".md"}
 
 
 def scan(store: Store, settings: Settings) -> Dict[str, int]:
-    """增量扫描：新增/更新入库，返回统计。"""
-    added = updated = total = 0
+    """扫描：先把所有条目收集到内存，再一次性写入（单事务）。"""
+    entries = []
     for root in settings.roots:
         base = Path(root)
         if not base.is_dir():
             continue
         for dirpath, _dirnames, filenames in os.walk(base):
+            rel_dir = os.path.relpath(dirpath, base)
+            rel = "" if rel_dir in (".", "") else rel_dir.replace(os.sep, "/")
+            folder = base.name if not rel else base.name + "/" + rel
             for filename in filenames:
                 ext = os.path.splitext(filename)[1].lower()
                 if ext not in ALL_EXTS:
@@ -31,20 +34,9 @@ def scan(store: Store, settings: Settings) -> Dict[str, int]:
                     stat = os.stat(full)
                 except OSError:
                     continue
-                total += 1
-                name = os.path.splitext(filename)[0]
-                # folder 存"相对 root 的完整目录路径"，用 / 分隔；root 本身为空串
-                rel_dir = os.path.relpath(dirpath, base)
-                rel = "" if rel_dir in (".", "") else rel_dir.replace(os.sep, "/")
-                # 第一段用根目录名，避免多个根目录的书混在一起
-                folder = base.name if not rel else base.name + "/" + rel
-                is_new = store.upsert_book(full, name, ext.lstrip("."), stat.st_size,
-                                           stat.st_mtime, root, folder)
-                if is_new:
-                    added += 1
-                else:
-                    updated += 1
-    return {"total": total, "added": added, "updated": updated}
+                entries.append((full, os.path.splitext(filename)[0], ext.lstrip("."),
+                                stat.st_size, stat.st_mtime, root, folder))
+    return store.bulk_sync(entries)
 
 
 def read_text(path: str, limit: int = 0) -> Tuple[str, int]:
