@@ -65,6 +65,46 @@ def rescan() -> dict:
     return result
 
 
+@app.get("/api/browse")
+def browse(path: str = "", q: str = "") -> dict:
+    """目录式浏览：返回当前目录下的子目录、书籍，以及面包屑。"""
+    books = store.list_books((), limit=100000)          # 全量（只取元数据）
+    all_books = [b for b in books if b["ext"]]
+
+    # 当前目录（含子目录）的书
+    if path:
+        scoped = [b for b in all_books
+                  if b["folder"] == path or b["folder"].startswith(path + "/")]
+    else:
+        scoped = all_books
+
+    # 子目录：当前目录下所有书 folder 的第一段
+    counts: dict = {}
+    for b in scoped:
+        rest = b["folder"][len(path):].lstrip("/")
+        if not rest:
+            continue                                   # 直接躺在当前目录的书
+        child = rest.split("/")[0]
+        counts[child] = counts.get(child, 0) + 1
+    folders = [{"name": k, "path": (path + "/" + k) if path else k, "count": v}
+               for k, v in sorted(counts.items())]
+
+    # 当前目录直属的书（不含子目录），可选按文件名过滤
+    terms = _split_terms(q)
+    direct = [b for b in scoped if b["folder"] == path]
+    if terms:
+        direct = [b for b in direct if all(t.lower() in b["name"].lower() for t in terms)]
+
+    crumbs = []
+    acc = ""
+    for seg in [p for p in path.split("/") if p]:
+        acc = (acc + "/" + seg) if acc else seg
+        crumbs.append({"name": seg, "path": acc})
+
+    return {"path": path, "breadcrumb": crumbs, "folders": folders,
+            "books": direct, "total": len(direct), "scoped": len(scoped)}
+
+
 @app.get("/api/groups")
 def list_groups() -> dict:
     groups = store.groups()
@@ -72,9 +112,12 @@ def list_groups() -> dict:
 
 
 @app.get("/api/books")
-def list_books(q: str = "", group: str = "",
+def list_books(q: str = "", group: str = "", subtree: str = "",
                limit: int = Query(200, ge=1, le=1000)) -> dict:
-    books = store.list_books(_split_terms(q), limit=limit, folder=group or None)
+    if subtree:
+        books = store.list_books(_split_terms(q), limit=limit, subtree=subtree)
+    else:
+        books = store.list_books(_split_terms(q), limit=limit, folder=group or None)
     return {"books": books, "total": len(books), "group": group}
 
 
@@ -185,7 +228,7 @@ def search_all(q: str = "", limit: int = 200) -> dict:
 
 
 @app.get("/api/search/stream")
-def search_stream(q: str = "", group: str = "") -> StreamingResponse:
+def search_stream(q: str = "", group: str = "", path: str = "") -> StreamingResponse:
     """全库/分组内容搜索：每找到一本就推一条，前端可以边收边显示。"""
     terms = _split_terms(q)
     if not terms:
@@ -193,8 +236,11 @@ def search_stream(q: str = "", group: str = "") -> StreamingResponse:
             yield b'data: {"type":"done","scanned":0,"found":0}\n\n'
         return StreamingResponse(empty(), media_type="text/event-stream")
 
-    books = [b for b in store.list_books((), limit=100000, folder=group or None)
-             if b["ext"] == "txt"]
+    if path:
+        books = [b for b in store.list_books((), limit=100000, subtree=path) if b["ext"] == "txt"]
+    else:
+        books = [b for b in store.list_books((), limit=100000, folder=group or None)
+                 if b["ext"] == "txt"]
 
     def gen():
         yield ("data: " + json.dumps(

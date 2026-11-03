@@ -1,6 +1,6 @@
 const $ = (s) => document.querySelector(s);
 const state = { books: [], current: null, savedOffset: 0, dirty: false, timer: null,
-                blocks: [], prefix: [0], rendered: 0, group: "", groups: [] };
+                blocks: [], prefix: [0], rendered: 0, path: "", folders: [], crumbs: [] };
 const BLOCK_CHARS = 2000;   // 每块约 2000 字，避免单个巨型文本节点拖垮排版
 
 async function api(path, opts = {}) {
@@ -106,32 +106,45 @@ function saveSettings(patch) {
 // ---------- 列表 ----------
 async function loadBooks() {
   const q = $("#search").value.trim();
-  const url = `/api/books?q=${encodeURIComponent(q)}&group=${encodeURIComponent(state.group)}`;
+  const url = `/api/browse?path=${encodeURIComponent(state.path)}&q=${encodeURIComponent(q)}`;
   const data = await api(url);
   state.books = data.books;
+  state.folders = data.folders;
+  state.crumbs = data.breadcrumb;
+  renderCrumbs();
+  renderFolders();
   renderList();
 }
 
-async function loadGroups() {
-  const data = await api("/api/groups");
-  state.groups = data.groups;
-  renderGroups(data.total);
-}
-
-function renderGroups(total) {
-  const box = $("#groups");
+function renderCrumbs() {
+  const box = $("#crumbs");
   box.innerHTML = "";
   const all = document.createElement("button");
-  all.textContent = `全部 ${total}`;
-  all.className = state.group === "" ? "on" : "";
-  all.onclick = () => { state.group = ""; loadBooks(); loadGroups(); };
+  all.textContent = "全部书库";
+  all.onclick = () => { state.path = ""; loadBooks(); };
   box.appendChild(all);
-  for (const g of state.groups) {
+  state.crumbs.forEach((c, i) => {
+    const sep = document.createElement("span");
+    sep.className = "sep";
+    sep.textContent = "/";
+    box.appendChild(sep);
     const b = document.createElement("button");
-    b.textContent = `${g.name || "未分组"} ${g.count}`;
-    b.className = state.group === g.name ? "on" : "";
-    b.onclick = () => { state.group = g.name; loadBooks(); loadGroups(); };
+    b.textContent = c.name;
+    b.onclick = () => { state.path = c.path; loadBooks(); };
     box.appendChild(b);
+  });
+}
+
+function renderFolders() {
+  const list = $("#folder-list");
+  list.innerHTML = "";
+  for (const f of state.folders) {
+    const li = document.createElement("li");
+    li.innerHTML = `<span class="icon">📁</span><span class="name"></span><span class="count"></span>`;
+    li.querySelector(".name").textContent = f.name;
+    li.querySelector(".count").textContent = `${f.count} 本`;
+    li.onclick = () => { state.path = f.path; $("#search").value = ""; loadBooks(); };
+    list.appendChild(li);
   }
 }
 
@@ -272,7 +285,6 @@ $("#btn-scan").onclick = async () => {
   toast("扫描中…");
   const r = await api("/api/scan", { method: "POST" });
   toast(`共 ${r.total}，新增 ${r.added}`);
-  loadGroups();
   loadBooks();
 };
 $("#btn-back").onclick = async () => {
@@ -325,7 +337,8 @@ function openSearchPage() {
   document.body.dataset.view = "search";
   $("#searchpage").hidden = false;
   $("#search-results").innerHTML = "";
-  $("#search-meta").textContent = state.group ? `范围：${state.group}` : "范围：全部书籍";
+  $("#search-meta").textContent =
+    "范围：" + (state.path ? state.path.split("/").join(" / ") : "全部书籍");
   $("#content-q").value = $("#search").value.trim();
   $("#content-q").focus();
 }
@@ -355,7 +368,7 @@ async function runContentSearch() {
   const terms = q.split(/\s+/).filter(Boolean);
 
   try {
-    const url = `/api/search/stream?q=${encodeURIComponent(q)}&group=${encodeURIComponent(state.group)}`;
+    const url = `/api/search/stream?q=${encodeURIComponent(q)}&path=${encodeURIComponent(state.path)}`;
     const res = await fetch(url);
     if (!res.ok || !res.body) throw new Error("HTTP " + res.status);
     const reader = res.body.getReader();
@@ -442,5 +455,4 @@ $("#reader-text").addEventListener("scroll", () => {
 
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 loadSettings();
-loadGroups();
 loadBooks();

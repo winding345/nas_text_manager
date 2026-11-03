@@ -81,7 +81,7 @@ class Store:
         return dict(row) if row else None
 
     def list_books(self, terms: Iterable[str] = (), limit: int = 200,
-                   folder: Optional[str] = None) -> List[Dict[str, Any]]:
+                   folder: Optional[str] = None, subtree: Optional[str] = None) -> List[Dict[str, Any]]:
         sql = "SELECT id,name,ext,size,root,folder,char_count,path FROM books"
         params: List[Any] = []
         terms = [t for t in terms if t]
@@ -89,9 +89,13 @@ class Store:
         if terms:
             where.append(" AND ".join("name LIKE ?" for _ in terms))
             params += ["%%%s%%" % t for t in terms]
-        if folder:
+        if folder is not None and subtree is None:
             where.append("folder = ?")
             params.append(folder)
+        if subtree is not None:
+            # 当前目录及其所有子目录里的书
+            where.append("(folder = ? OR folder LIKE ?)")
+            params += [subtree, ("%s/%%" % subtree) if subtree else "%"]
         if where:
             sql += " WHERE " + " AND ".join(where)
         sql += " ORDER BY name LIMIT ?"

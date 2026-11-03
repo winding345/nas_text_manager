@@ -16,6 +16,9 @@ def client(tmp_path, monkeypatch):
     (books / "三国演义.txt").write_text("第一回 宴桃园豪杰三结义\n曹操 刘备 孙权\n", encoding="utf-8")
     (books / "红楼梦.txt").write_text("甄士隐梦幻识通灵\n贾宝玉 林黛玉\n", encoding="utf-8")
     (books / "somebook.epub").write_bytes(b"PK\x03\x04")
+    sub = books / "武侠" / "金庸"
+    sub.mkdir(parents=True)
+    (sub / "射雕英雄传.txt").write_text("郭靖 黄蓉\n", encoding="utf-8")
 
     monkeypatch.setenv("BOOKS_DIRS", str(books))
     monkeypatch.setenv("DB_PATH", str(tmp_path / "lib.db"))
@@ -29,12 +32,12 @@ def client(tmp_path, monkeypatch):
     with TestClient(app) as c:
         r = c.post("/api/scan")
         assert r.status_code == 200
-        assert r.json()["total"] == 3
+        assert r.json()["total"] == 4
         yield c
 
 
 def test_list_and_multiterm_search(client):
-    assert len(client.get("/api/books").json()["books"]) == 3
+    assert len(client.get("/api/books").json()["books"]) == 4
     hits = client.get("/api/books", params={"q": "三国 演义"}).json()["books"]
     assert [b["name"] for b in hits] == ["三国演义"]
     assert client.get("/api/books", params={"q": "三国 不存在"}).json()["books"] == []
@@ -124,16 +127,32 @@ def test_search_cache_invalidated_after_delete(client):
     assert book["name"] not in names, "已删的书不应再出现在搜索结果里"
 
 
-def test_groups_and_group_filter(client):
-    """分组：按一级子目录切分；默认全局返回全部。"""
-    groups = client.get("/api/groups").json()
-    assert groups["total"] == 3
-    names = [g["name"] for g in groups["groups"]]
-    assert names, "至少有一个分组"
-    first = groups["groups"][0]["name"]
-    scoped = client.get("/api/books", params={"group": first}).json()
-    assert scoped["total"] == groups["groups"][0]["count"]
-    assert all(b["folder"] == first for b in scoped["books"])
+def test_browse_tree(client):
+    """多级目录：根 → 子目录 → 更深层，逐层返回子目录与直属书籍。"""
+    root = client.get("/api/browse").json()
+    assert [f["name"] for f in root["folders"]] == ["books"]      # 顶层是各根目录
+    assert root["folders"][0]["count"] == 4
+
+    lib = client.get("/api/browse", params={"path": "books"}).json()
+    assert [f["name"] for f in lib["folders"]] == ["武侠"]
+    assert {b["name"] for b in lib["books"]} == {"三国演义", "红楼梦", "somebook"}
+
+    wuxia = client.get("/api/browse", params={"path": "books/武侠"}).json()
+    assert [f["name"] for f in wuxia["folders"]] == ["金庸"]
+    assert wuxia["books"] == []
+    assert [c["name"] for c in wuxia["breadcrumb"]] == ["books", "武侠"]
+
+    deep = client.get("/api/browse", params={"path": "books/武侠/金庸"}).json()
+    assert deep["folders"] == []
+    assert [b["name"] for b in deep["books"]] == ["射雕英雄传"]
+
+
+def test_browse_scoped_filename_search(client):
+    """文件名搜索只在当前目录内生效。"""
+    r = client.get("/api/browse", params={"path": "books/武侠/金庸", "q": "射雕"}).json()
+    assert [b["name"] for b in r["books"]] == ["射雕英雄传"]
+    r2 = client.get("/api/browse", params={"path": "books/武侠/金庸", "q": "三国"}).json()
+    assert r2["books"] == []
 
 
 def test_search_stream_returns_hits(client):

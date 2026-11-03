@@ -71,7 +71,10 @@ input[type=search]{flex:1;font:inherit;padding:8px 12px;border:1px solid var(--l
 #groups button.on{background:var(--accent);color:var(--bg);border-color:var(--accent)}
 
 /* 内容搜索子页面 */
-#searchpage{flex:1;display:flex;flex-direction:column;min-height:0}
+/* [hidden] 要能压过 display:flex，否则搜索页会一直挤在布局里 */
+#searchpage{position:fixed;inset:0;z-index:50;background:var(--bg);
+  display:flex;flex-direction:column;min-height:0}
+#searchpage[hidden]{display:none}
 #search-head{display:flex;gap:8px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line)}
 #search-head input{flex:1;font:inherit;padding:8px 12px;border:1px solid var(--line);
   border-radius:10px;background:var(--panel);color:var(--fg)}
@@ -89,6 +92,19 @@ input[type=search]{flex:1;font:inherit;padding:8px 12px;border:1px solid var(--l
   body[data-view="search"] #topbar{display:none}
   body[data-view="search"] #searchpage{display:flex}
 }
-@media (min-width:761px){
-  #searchpage{position:fixed;inset:0;background:var(--bg);z-index:40}
-}
+
+
+/* 面包屑 */
+#crumbs{display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:8px 12px;
+  font-size:13px;color:var(--muted);border-bottom:1px solid var(--line)}
+#crumbs button{background:none;border:none;color:var(--accent);padding:2px 4px;font-size:13px}
+#crumbs .sep{opacity:.5}
+
+/* 目录条目 */
+#folder-list{list-style:none;margin:0;padding:0}
+#folder-list li{display:flex;align-items:center;gap:8px;padding:11px 14px;
+  border-bottom:1px solid var(--line);cursor:pointer}
+#folder-list li:hover{background:var(--panel)}
+#folder-list .icon{font-size:15px}
+#folder-list .name{flex:1;font-weight:600}
+#folder-list .count{color:var(--muted);font-size:12px}

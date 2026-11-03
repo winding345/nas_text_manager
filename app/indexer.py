@@ -33,12 +33,11 @@ def scan(store: Store, settings: Settings) -> Dict[str, int]:
                     continue
                 total += 1
                 name = os.path.splitext(filename)[0]
-                # 分组：相对 root 的一级子目录；直接躺在 root 下的用 root 目录名
+                # folder 存"相对 root 的完整目录路径"，用 / 分隔；root 本身为空串
                 rel_dir = os.path.relpath(dirpath, base)
-                if rel_dir in (".", ""):
-                    folder = base.name
-                else:
-                    folder = rel_dir.split(os.sep)[0]
+                rel = "" if rel_dir in (".", "") else rel_dir.replace(os.sep, "/")
+                # 第一段用根目录名，避免多个根目录的书混在一起
+                folder = base.name if not rel else base.name + "/" + rel
                 is_new = store.upsert_book(full, name, ext.lstrip("."), stat.st_size,
                                            stat.st_mtime, root, folder)
                 if is_new:
