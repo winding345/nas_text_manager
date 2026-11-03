@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
 from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -20,7 +21,18 @@ store = Store(settings.db_path)
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "static"
 
-app = FastAPI(title="nas_text_manager", docs_url=None, redoc_url=None)
+@asynccontextmanager
+async def lifespan(_app):
+    """启动时扫一次：避免"新部署打开是空书库"。"""
+    try:
+        result = indexer.scan(store, settings)
+        print("[scan] 启动扫描：共 %d，新增 %d" % (result["total"], result["added"]), flush=True)
+    except Exception as exc:  # noqa: BLE001  扫描失败不该阻止服务启动
+        print("[scan] 启动扫描失败：%s" % exc, flush=True)
+    yield
+
+
+app = FastAPI(title="nas_text_manager", docs_url=None, redoc_url=None, lifespan=lifespan)
 
 
 @app.middleware("http")
@@ -97,15 +109,25 @@ def put_progress(book_id: int, payload: dict = Body(...)) -> dict:
 def delete_book(book_id: int) -> dict:
     if not settings.allow_delete:
         raise HTTPException(status_code=403, detail="当前未开启删除")
-    book = store.delete_book(book_id)
+    book = store.get_book(book_id)
     if not book:
         raise HTTPException(status_code=404, detail="书籍不存在")
-    _search_cache.clear()          # 删书后不能让搜索结果继续返回它
+
+    # 先删文件：失败就不动数据库，避免"DB 没了、文件还在"的孤儿
+    file_removed = False
     try:
         os.remove(book["path"])
+        file_removed = True
+    except FileNotFoundError:
+        file_removed = True          # 文件本来就不在，按成功处理
     except OSError as exc:
-        return {"ok": True, "deleted_db": True, "deleted_file": False, "error": str(exc)}
-    return {"ok": True, "deleted_db": True, "deleted_file": True}
+        raise HTTPException(
+            status_code=500,
+            detail="文件删除失败，数据库记录已保留：%s" % exc)
+
+    store.delete_book(book_id)
+    _search_cache.clear()
+    return {"ok": True, "deleted_file": file_removed, "deleted_db": True}
 
 
 @app.get("/api/books/{book_id}/search")

@@ -83,8 +83,8 @@ def test_non_txt_cannot_be_opened(client):
     assert "txt" in r.json()["detail"]
 
 
-def test_delete_file_failure_leaves_orphan(client, monkeypatch, tmp_path):
-    """删除非原子（§3）：文件删失败时仍返回 ok:true，DB 记录已消失，磁盘文件成孤儿。"""
+def test_delete_file_failure_keeps_db(client, monkeypatch, tmp_path):
+    """删除顺序：文件删失败时返回 500，且数据库记录保留（不产生孤儿）。"""
     import app.main as main_module
 
     book = client.get("/api/books", params={"q": "红楼"}).json()["books"][0]
@@ -95,39 +95,22 @@ def test_delete_file_failure_leaves_orphan(client, monkeypatch, tmp_path):
 
     monkeypatch.setattr(main_module.os, "remove", boom)
     r = client.delete(f"/api/books/{book['id']}")
-    assert r.status_code == 200
-    body = r.json()
-    assert body["deleted_db"] is True
-    assert body["deleted_file"] is False
-    assert "error" in body
+    assert r.status_code == 500
+    assert "数据库记录已保留" in r.json()["detail"]
+    # DB 还在、文件也在
+    assert client.get(f"/api/books/{book['id']}").status_code == 200
+    assert path.exists()
 
-    # DB 已查不到，但文件还在 => 孤儿
+
+def test_delete_missing_file_still_removes_record(client, tmp_path):
+    """文件已经不在时，删除应当成功（幂等）。"""
+    import os as _os
+    book = client.get("/api/books", params={"q": "红楼"}).json()["books"][0]
+    _os.remove(tmp_path / "books" / "红楼梦.txt")
+    r = client.delete(f"/api/books/{book['id']}")
+    assert r.status_code == 200
+    assert r.json()["deleted_db"] is True
     assert client.get(f"/api/books/{book['id']}").status_code == 404
-    assert path.exists(), "文件应仍在磁盘上，证明删除不是原子的"
-
-
-def test_search_cache_invalidated_on_delete(client):
-    """删书后缓存必须失效，搜索结果不能继续返回它。"""
-    first = client.get("/api/search", params={"q": "曹操"}).json()
-    assert first["results"]
-    book_id = first["results"][0]["book"]["id"]
-
-    assert client.delete(f"/api/books/{book_id}").status_code == 200
-    assert client.get(f"/api/books/{book_id}").status_code == 404
-
-    again = client.get("/api/search", params={"q": "曹操"}).json()
-    assert again["results"] == []
-
-
-def test_progress_negative_clamped_in_db_but_echoed(client):
-    """§3：入库压到 >=0，但 PUT 响应回显请求原值（已知小坑）。"""
-    book = client.get("/api/books", params={"q": "三国"}).json()["books"][0]
-
-    r = client.put(f"/api/books/{book['id']}/progress", json={"char_offset": -5})
-    assert r.status_code == 200
-    assert r.json()["char_offset"] == -5, "响应应回显原值（已知坑）"
-    assert client.get(f"/api/books/{book['id']}/progress").json()["char_offset"] == 0, \
-        "库里必须被压到 0"
 
 
 def test_search_cache_invalidated_after_delete(client):

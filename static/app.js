@@ -115,8 +115,14 @@ function renderList() {
     const li = document.createElement("li");
     li.innerHTML = `<span class="name"></span><span class="ext">${b.ext}</span>`;
     li.querySelector(".name").textContent = b.name;
-    li.onclick = () => openBook(b);
-    if (b.ext === "txt") {
+    if (b.ext !== "txt") {
+      li.classList.add("disabled");
+      li.title = "仅支持在线阅读 txt";
+      li.onclick = () => toast(`《${b.name}》是 ${b.ext}，只能下载或用 Kindle 推送`);
+    } else {
+      li.onclick = () => openBook(b);
+    }
+    if (true) {
       const del = document.createElement("button");
       del.className = "del";
       del.textContent = "删";
